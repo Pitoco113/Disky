@@ -94,6 +94,7 @@ Disky/
 ## 📸 Screenshots
 
 *Em breve! Quer contribuir com um screenshot? Abra uma issue!*
+<img width="901" height="667" alt="Captura de tela 2026-06-05 153835" src="https://github.com/user-attachments/assets/e3f720c5-6313-4bf7-8d0c-bc455fb3b30a" />
 
 ---
 
