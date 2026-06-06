@@ -85,6 +85,19 @@ class DiskyApp(ctk.CTk):
         if self.start_hidden:
             self.after(200, self.withdraw)
 
+    def _start_watcher(self):
+        """Inicia o monitoramento de pastas em segundo plano."""
+        try:
+            from core.organizer import FolderWatcher
+            folders = [f["path"] for f in db.get_watched_folders()]
+            if not folders:
+                return
+            self.watcher = FolderWatcher(folders, on_file=self.on_file_organized)
+            self.watcher.start()
+            self._set_status(self.i18n.t("status_monitoring", n=len(folders)))
+        except Exception as e:
+            self._set_status(f"⚠️  Watcher error: {e}")
+
     # ─── Header ────────────────────────────────────────────────
 
     def _build_header(self):
