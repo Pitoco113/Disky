@@ -1,5 +1,5 @@
 """
-ui/app.py - Interface gráfica principal do Disky
+ui/app.py - Interface gráfica principal do Disky v2.0
 Criado por PITOCO113 🇧🇷
 """
 
@@ -9,9 +9,6 @@ from tkinter import filedialog, messagebox
 import os
 import sys
 import threading
-import subprocess
-import json
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -22,11 +19,18 @@ from core.install import install_app, set_startup_enabled, is_startup_enabled, i
 from core.duplicate_finder import run_full_scan, group_duplicates, delete_duplicate_file
 from locales import I18n
 
-COR_FUNDO = "#1a1a2e"
-COR_CARTAO = "#16213e"
-COR_PRIMARIA = "#2b7a4b"
-COR_SECUNDARIA = "#1a5c3a"
-COR_DESTAQUE = "#3a8fd4"
+# ─── Paleta de Cores Moderna ───────────────────────────────
+COR_FUNDO = "#0f0f1a"
+COR_CARTAO = "#1a1a2e"
+COR_CARTAO_HOVER = "#252542"
+COR_PRIMARIA = "#6366f1"  # Indigo vibrante
+COR_PRIMARIA_HOVER = "#818cf8"
+COR_SECUNDARIA = "#22c55e"  # Verde sucesso
+COR_DESTAQUE = "#f59e0b"  # Amarelo atenção
+COR_TEXTO = "#f1f5f9"
+COR_TEXTO_SEC = "#94a3b8"
+COR_ERRO = "#ef4444"
+COR_BORDA = "#2d2d4a"
 
 
 class DiskyApp(ctk.CTk):
@@ -51,18 +55,22 @@ class DiskyApp(ctk.CTk):
         self._organizing = False
         self._scanning = False
 
-        self.title(self.i18n.t("app_title"))
-        self.geometry("900x640")
-        self.minsize(780, 540)
+        self.title("Disky")
+        self.geometry("960x700")
+        self.minsize(800, 600)
         self.configure(fg_color=COR_FUNDO)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        # Fonts
+        self.font_titulo = ctk.CTkFont(size=26, weight="bold", family="Segoe UI")
+        self.font_subtitulo = ctk.CTkFont(size=13, family="Segoe UI")
+        self.font_card = ctk.CTkFont(size=15, weight="bold", family="Segoe UI")
+        self.font_corpo = ctk.CTkFont(size=12, family="Segoe UI")
+        self.font_botao = ctk.CTkFont(size=13, weight="bold", family="Segoe UI")
+        self.font_pequeno = ctk.CTkFont(size=11, family="Segoe UI")
 
-        self._build_menubar()
         self._build_header()
-        self._build_main_area()
+        self._build_tabs()
         self._build_status_bar()
 
         self.refresh_dashboard()
@@ -77,77 +85,59 @@ class DiskyApp(ctk.CTk):
         if self.start_hidden:
             self.after(200, self.withdraw)
 
-    # ─── Watcher ──────────────────────────────────────────────
+    # ─── Header ────────────────────────────────────────────────
 
-    def _start_watcher(self):
-        try:
-            self.watcher = FolderWatcher(self)
-            ok = self.watcher.start()
-            folders = db.get_watched_folders()
-            if ok and folders:
-                self._set_status(self.i18n.t("status_monitoring", n=len(folders)))
-            else:
-                self._set_status("⏸️  Nenhuma pasta sendo monitorada")
-        except Exception as e:
-            self._set_status(f"⚠️  {str(e)[:40]}")
+    def _build_header(self):
+        header = ctk.CTkFrame(self, fg_color=COR_CARTAO, corner_radius=0, height=70)
+        header.pack(fill="x", padx=0, pady=0)
+        header.pack_propagate(False)
 
-    # ─── Menu ─────────────────────────────────────────────────
+        # Logo + Título
+        container = ctk.CTkFrame(header, fg_color="transparent")
+        container.pack(side="left", padx=20, pady=10)
 
-    def _build_menubar(self):
-        bar = ctk.CTkFrame(self, fg_color=COR_CARTAO, corner_radius=0, height=36)
-        bar.grid(row=0, column=0, sticky="ew")
-        bar.grid_columnconfigure(6, weight=1)
+        titulo = ctk.CTkLabel(
+            container, text="🧹 Disky",
+            font=self.font_titulo, text_color=COR_PRIMARIA
+        )
+        titulo.pack(anchor="w")
 
-        # Idioma
-        self.lang_btn = ctk.CTkOptionMenu(
-            bar,
+        subtitulo = ctk.CTkLabel(
+            container, text=self.i18n.t("app_subtitle", creator="PITOCO113 🇧🇷"),
+            font=self.font_corpo, text_color=COR_TEXTO_SEC
+        )
+        subtitulo.pack(anchor="w")
+
+        # Controles à direita
+        controles = ctk.CTkFrame(header, fg_color="transparent")
+        controles.pack(side="right", padx=15, pady=10)
+
+        # Selector de idioma estilizado
+        self.lang_menu = ctk.CTkOptionMenu(
+            controles,
             values=[v for _, v in self.i18n.get_languages()],
             command=self._change_lang,
-            fg_color="#333", button_color=COR_PRIMARIA,
-            button_hover_color=COR_SECUNDARIA,
-            width=140, height=28, font=ctk.CTkFont(size=11),
+            fg_color=COR_CARTAO, button_color=COR_PRIMARIA,
+            button_hover_color=COR_PRIMARIA_HOVER,
+            dropdown_fg_color=COR_CARTAO,
+            width=130, height=36, font=self.font_corpo,
+            corner_radius=8
         )
-        self.lang_btn.grid(row=0, column=0, padx=(10, 5), pady=2)
+        self.lang_menu.pack(side="left", padx=5)
         self._update_lang_btn()
 
-        # Botão Instalar
+        # Botão instalar
         self.install_btn = ctk.CTkButton(
-            bar,
-            text="📌  Instalar no Windows",
+            controles, text="📌",
             command=self._install_windows,
-            fg_color="transparent",
-            hover_color="#2a2a4a",
-            font=ctk.CTkFont(size=12),
-            height=28, width=130,
+            fg_color="transparent", hover_color=COR_CARTAO_HOVER,
+            font=ctk.CTkFont(size=16), width=40, height=36, corner_radius=8
         )
-        self.install_btn.grid(row=0, column=1, padx=5, pady=2)
-
-        # Iniciar com Windows toggle
-        self.startup_var = ctk.StringVar(value="")
-        startup_btn = ctk.CTkSwitch(
-            bar,
-            text="Iniciar com Windows",
-            command=self._toggle_startup,
-            font=ctk.CTkFont(size=10),
-            progress_color=COR_PRIMARIA,
-            onvalue="1", offvalue="0",
-        )
-        startup_btn.grid(row=0, column=2, padx=5, pady=2)
-
-        # Marca
-        ctk.CTkLabel(
-            bar,
-            text=self.i18n.t("creator_name"),
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#888",
-        ).grid(row=0, column=6, padx=15, pady=2, sticky="e")
-
-        # Atualiza toggle após criar
-        self.after(100, lambda: startup_btn.select() if get_config("run_on_startup", "0") == "1" else startup_btn.deselect())
+        self.install_btn.pack(side="left", padx=5)
 
     def _update_lang_btn(self):
         langs = dict(self.i18n.get_languages())
-        self.lang_btn.set(langs.get(self._lang, "🇧🇷  Português"))
+        self.lang_menu.set(langs.get(self._lang, "🇧🇷  Português"))
 
     def _change_lang(self, choice):
         lang_map = {"🇧🇷  Português": "pt_BR", "🇺🇸  English": "en"}
@@ -155,44 +145,25 @@ class DiskyApp(ctk.CTk):
         self._lang = code
         self.i18n.set_language(code)
         set_config("language", code)
-        self._rebuild_ui()
-
-    def _rebuild_ui(self):
-        self.title(self.i18n.t("app_title"))
-        self.header_title.configure(text=self.i18n.t("app_title"))
-        self.header_sub.configure(text=self.i18n.t("app_subtitle", creator=self.i18n.t("creator_name")))
-        self._rebuild_main_area()
+        self.refresh_dashboard()
+        self.refresh_organizer_tab()
+        self.refresh_duplicates_tab()
         self._update_lang_btn()
-        if hasattr(self, '_status_text'):
-            self._set_status(self._status_text)
+        self._set_status(self.i18n.t("status_monitoring", n=len(db.get_watched_folders())))
 
-    # ─── Header ───────────────────────────────────────────────
+    # ─── Tabs ──────────────────────────────────────────────────
 
-    def _build_header(self):
-        h = ctk.CTkFrame(self, fg_color=COR_CARTAO, corner_radius=0)
-        h.grid(row=1, column=0, sticky="ew")
-        h.grid_columnconfigure(0, weight=1)
-
-        self.header_title = ctk.CTkLabel(
-            h, text=self.i18n.t("app_title"),
-            font=ctk.CTkFont(size=28, weight="bold"),
-            text_color=COR_PRIMARIA,
+    def _build_tabs(self):
+        self.tabview = ctk.CTkTabview(
+            self, fg_color=COR_FUNDO,
+            segmented_button_fg_color=COR_CARTAO,
+            segmented_button_selected_color=COR_PRIMARIA,
+            segmented_button_selected_hover_color=COR_PRIMARIA_HOVER,
+            segmented_button_unselected_color=COR_CARTAO,
+            segmented_button_unselected_hover_color=COR_CARTAO_HOVER,
+            corner_radius=10
         )
-        self.header_title.grid(row=0, column=0, pady=(10, 0))
-
-        self.header_sub = ctk.CTkLabel(
-            h, text=self.i18n.t("app_subtitle", creator=self.i18n.t("creator_name")),
-            font=ctk.CTkFont(size=12), text_color="#888",
-        )
-        self.header_sub.grid(row=1, column=0, pady=(0, 8))
-
-    # ─── Main Area ────────────────────────────────────────────
-
-    def _build_main_area(self):
-        if hasattr(self, 'tabview'):
-            self.tabview.destroy()
-        self.tabview = ctk.CTkTabview(self, fg_color=COR_FUNDO)
-        self.tabview.grid(row=2, column=0, sticky="nsew", padx=12, pady=8)
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
 
         self.tabview.add(self.i18n.t("tab_dashboard"))
         self.tabview.add(self.i18n.t("tab_organizer"))
@@ -202,26 +173,26 @@ class DiskyApp(ctk.CTk):
         self._build_organizer_tab()
         self._build_duplicates_tab()
 
-    def _rebuild_main_area(self):
-        self._build_main_area()
-        self.refresh_dashboard()
-        self.refresh_organizer_tab()
-        self.refresh_duplicates_tab()
-
     # ─── Status Bar ───────────────────────────────────────────
 
     def _build_status_bar(self):
-        s = ctk.CTkFrame(self, fg_color=COR_CARTAO, corner_radius=0, height=30)
-        s.grid(row=3, column=0, sticky="ew")
-        s.grid_columnconfigure(0, weight=1)
+        s = ctk.CTkFrame(self, fg_color=COR_CARTAO, corner_radius=0, height=32)
+        s.pack(fill="x", side="bottom")
+        s.pack_propagate(False)
+
         self.status_label = ctk.CTkLabel(
-            s, text="✅  Pronto!",
-            font=ctk.CTkFont(size=11), text_color="#888",
+            s, text="✅ " + self.i18n.t("status_monitoring", n=0),
+            font=self.font_pequeno, text_color=COR_TEXTO_SEC
         )
-        self.status_label.grid(row=0, column=0, padx=15, pady=4, sticky="w")
+        self.status_label.pack(side="left", padx=15, pady=4)
+
+        # Indicador de monitoramento
+        self.monitor_indicator = ctk.CTkLabel(
+            s, text="🟢", font=ctk.CTkFont(size=12)
+        )
+        self.monitor_indicator.pack(side="right", padx=10, pady=4)
 
     def _set_status(self, msg):
-        self._status_text = msg
         self.status_label.configure(text=msg)
 
     # ─── DASHBOARD ────────────────────────────────────────────
@@ -230,89 +201,119 @@ class DiskyApp(ctk.CTk):
         tab = self.tabview.tab(self.i18n.t("tab_dashboard"))
         tab.grid_columnconfigure(0, weight=1)
 
-        card_frame = ctk.CTkFrame(tab, fg_color=COR_FUNDO)
-        card_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(15, 5))
-        card_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        # Cards de estatísticas
+        cards_frame = ctk.CTkFrame(tab, fg_color=COR_FUNDO)
+        cards_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(15, 10))
+        cards_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-        self.card_organized = ctk.CTkLabel(
-            card_frame, text="📥 0\norganizados",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            fg_color=COR_CARTAO, corner_radius=10,
-            width=200, height=80,
+        self.card_organized = self._make_card(
+            cards_frame, "📥", "0", self.i18n.t("card_organized_count"),
+            COR_PRIMARIA, 0
         )
-        self.card_organized.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-
-        self.card_duplicates = ctk.CTkLabel(
-            card_frame, text="🔁 0\nduplicatas",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            fg_color=COR_CARTAO, corner_radius=10,
-            width=200, height=80,
+        self.card_duplicates = self._make_card(
+            cards_frame, "🔁", "0", self.i18n.t("card_duplicates_count"),
+            COR_DESTAQUE, 1
         )
-        self.card_duplicates.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-
-        self.card_space = ctk.CTkLabel(
-            card_frame, text="💾 0 MB\nliberados",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            fg_color=COR_CARTAO, corner_radius=10,
-            width=200, height=80,
+        self.card_space = self._make_card(
+            cards_frame, "💾", "0 MB", self.i18n.t("card_space_count"),
+            COR_SECUNDARIA, 2
         )
-        self.card_space.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
-        btn_frame = ctk.CTkFrame(tab, fg_color=COR_FUNDO)
-        btn_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        btn_frame.grid_columnconfigure((0, 1), weight=1)
+        # Botões de ação
+        action_frame = ctk.CTkFrame(tab, fg_color=COR_FUNDO)
+        action_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        action_frame.grid_columnconfigure((0, 1), weight=1)
 
         self.btn_organize = ctk.CTkButton(
-            btn_frame, text=self.i18n.t("btn_organize_now"),
+            action_frame,
+            text=self.i18n.t("btn_organize_now"),
             command=self._organize_all,
-            fg_color=COR_PRIMARIA, hover_color=COR_SECUNDARIA,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            height=44,
+            fg_color=COR_PRIMARIA, hover_color=COR_PRIMARIA_HOVER,
+            font=self.font_botao, height=48, corner_radius=12
         )
         self.btn_organize.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
         self.btn_scan = ctk.CTkButton(
-            btn_frame, text=self.i18n.t("btn_scan_duplicates"),
+            action_frame,
+            text=self.i18n.t("btn_scan_duplicates"),
             command=self._scan_duplicates,
-            fg_color=COR_DESTAQUE, hover_color="#2a6b9c",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            height=44,
+            fg_color=COR_DESTAQUE, hover_color="#d97706",
+            font=self.font_botao, height=48, corner_radius=12
         )
         self.btn_scan.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        self.hist_frame = ctk.CTkScrollableFrame(tab, fg_color=COR_FUNDO, height=200)
-        self.hist_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        # Histórico
+        hist_label = ctk.CTkLabel(
+            tab, text=self.i18n.t("label_recent"),
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=COR_TEXTO
+        )
+        hist_label.grid(row=2, column=0, sticky="w", padx=15, pady=(10, 5))
+
+        self.hist_frame = ctk.CTkScrollableFrame(
+            tab, fg_color=COR_CARTAO, corner_radius=10,
+            height=180, border_width=0
+        )
+        self.hist_frame.grid(row=3, column=0, sticky="nsew", padx=10, pady=(0, 10))
         self.hist_frame.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(2, weight=1)
+        tab.grid_rowconfigure(3, weight=1)
+
+    def _make_card(self, parent, icon, value, label, color, column):
+        """Cria um card estilizado."""
+        card = ctk.CTkFrame(parent, fg_color=COR_CARTAO, corner_radius=12, border_width=1, border_color=COR_BORDA)
+        card.grid(row=0, column=column, padx=8, pady=5, sticky="ew")
+
+        icon_lbl = ctk.CTkLabel(
+            card, text=icon, font=ctk.CTkFont(size=28)
+        )
+        icon_lbl.pack(pady=(12, 0))
+
+        value_lbl = ctk.CTkLabel(
+            card, text=value,
+            font=ctk.CTkFont(size=22, weight="bold"), text_color=color
+        )
+        value_lbl.pack()
+
+        label_lbl = ctk.CTkLabel(
+            card, text=label,
+            font=self.font_pequeno, text_color=COR_TEXTO_SEC
+        )
+        label_lbl.pack(pady=(0, 12))
+
+        return value_lbl
 
     def refresh_dashboard(self):
         stats = get_stats()
         self.card_organized.configure(
-            text=self.i18n.t("card_organized", count=stats["organized"]))
+            text=str(stats["organized"]))
         self.card_duplicates.configure(
-            text=self.i18n.t("card_duplicates",
-                count="várias" if stats["space_found_mb"] > 0 else "0"))
+            text=str(stats.get("duplicate_groups", 0)))
         self.card_space.configure(
-            text=self.i18n.t("card_space", size=stats["space_found_mb"]))
+            text=f"{stats['space_found_mb']} MB")
 
         for w in self.hist_frame.winfo_children():
             w.destroy()
+
         history = get_recent_history(15)
         if history:
-            ctk.CTkLabel(
-                self.hist_frame, text=self.i18n.t("label_recent"),
-                font=ctk.CTkFont(size=12, weight="bold"), text_color="#aaa",
-            ).grid(row=0, column=0, sticky="w", pady=(5, 2))
             for i, h in enumerate(history):
+                item = ctk.CTkFrame(self.hist_frame, fg_color="transparent")
+                item.grid(row=i, column=0, sticky="ew", padx=5, pady=2)
+                item.grid_columnconfigure(0, weight=1)
+
                 ctk.CTkLabel(
-                    self.hist_frame, text=f"  • {h['filename']} → {h['rule_name']}",
-                    font=ctk.CTkFont(size=11), text_color="#ccc",
-                ).grid(row=i+1, column=0, sticky="w", padx=10)
+                    item, text=f"📄 {h['filename']}",
+                    font=self.font_corpo, text_color=COR_TEXTO, anchor="w"
+                ).grid(row=0, column=0, sticky="w")
+
+                ctk.CTkLabel(
+                    item, text=f"→ {h['rule_name']}",
+                    font=self.font_pequeno, text_color=COR_PRIMARIA, anchor="e"
+                ).grid(row=0, column=1, sticky="e")
         else:
             ctk.CTkLabel(
                 self.hist_frame, text=self.i18n.t("no_activity"),
-                font=ctk.CTkFont(size=12), text_color="#666",
-            ).grid(row=0, column=0, padx=20, pady=30)
+                font=self.font_corpo, text_color=COR_TEXTO_SEC
+            ).pack(pady=30)
 
     # ─── ORGANIZER TAB ────────────────────────────────────────
 
@@ -320,159 +321,194 @@ class DiskyApp(ctk.CTk):
         tab = self.tabview.tab(self.i18n.t("tab_organizer"))
         tab.grid_columnconfigure(0, weight=1)
 
+        # Seção Pastas
+        section_folders = ctk.CTkFrame(tab, fg_color="transparent")
+        section_folders.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        section_folders.grid_columnconfigure(0, weight=1)
+
+        header_pastas = ctk.CTkFrame(section_folders, fg_color="transparent")
+        header_pastas.grid(row=0, column=0, sticky="ew")
+        header_pastas.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            tab, text=self.i18n.t("watched_folders"),
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, padx=10, pady=(10, 2), sticky="w")
+            header_pastas, text=self.i18n.t("watched_folders"),
+            font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_TEXTO
+        ).grid(row=0, column=0, sticky="w")
 
-        self.folders_frame = ctk.CTkFrame(tab, fg_color=COR_CARTAO, corner_radius=8)
-        self.folders_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=2)
-        self.folders_frame.grid_columnconfigure(0, weight=1)
-
-        add_btn_frame = ctk.CTkFrame(tab, fg_color=COR_FUNDO)
-        add_btn_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
-        add_btn_frame.grid_columnconfigure((0, 1), weight=1)
-
-        ctk.CTkButton(
-            add_btn_frame, text=self.i18n.t("btn_add_folder"),
+        self.btn_add_folder = ctk.CTkButton(
+            header_pastas, text="➕",
             command=self._add_folder,
-            fg_color=COR_PRIMARIA, hover_color=COR_SECUNDARIA,
-            font=ctk.CTkFont(size=12), width=160, height=32,
-        ).grid(row=0, column=0, padx=2, sticky="w")
+            fg_color=COR_PRIMARIA, hover_color=COR_PRIMARIA_HOVER,
+            font=ctk.CTkFont(size=14), width=36, height=36, corner_radius=8
+        )
+        self.btn_add_folder.grid(row=0, column=1, sticky="e")
 
-        ctk.CTkButton(
-            add_btn_frame, text=self.i18n.t("btn_organize"),
+        self.folders_card = ctk.CTkFrame(section_folders, fg_color=COR_CARTAO, corner_radius=10)
+        self.folders_card.grid(row=1, column=0, sticky="ew", pady=(5, 0))
+        self.folders_card.grid_columnconfigure(0, weight=1)
+
+        # Seção Ações
+        actions = ctk.CTkFrame(tab, fg_color="transparent")
+        actions.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        actions.grid_columnconfigure(0, weight=1)
+
+        self.btn_organize_tab = ctk.CTkButton(
+            actions,
+            text=self.i18n.t("btn_organize"),
             command=self._organize_all,
-            fg_color=COR_DESTAQUE, hover_color="#2a6b9c",
-            font=ctk.CTkFont(size=12, weight="bold"), width=160, height=32,
-        ).grid(row=0, column=1, padx=2, sticky="w")
+            fg_color=COR_SECUNDARIA, hover_color="#16a34a",
+            font=self.font_botao, height=44, corner_radius=10
+        )
+        self.btn_organize_tab.grid(row=0, column=0, padx=5, sticky="ew")
 
+        # Seção Regras
         ctk.CTkLabel(
             tab, text=self.i18n.t("rules_title"),
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=3, column=0, padx=10, pady=(10, 2), sticky="w")
+            font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_TEXTO
+        ).grid(row=2, column=0, sticky="w", padx=15, pady=(5, 5))
 
-        self.rules_frame = ctk.CTkScrollableFrame(tab, fg_color=COR_FUNDO, height=180)
-        self.rules_frame.grid(row=4, column=0, sticky="nsew", padx=10, pady=2)
-        self.rules_frame.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(4, weight=1)
+        self.rules_card = ctk.CTkScrollableFrame(
+            tab, fg_color=COR_CARTAO, corner_radius=10, height=160
+        )
+        self.rules_card.grid(row=3, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self.rules_card.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(3, weight=1)
 
     def refresh_organizer_tab(self):
-        for w in self.folders_frame.winfo_children():
+        # Limpa folders
+        for w in self.folders_card.winfo_children():
             w.destroy()
+
         folders = db.get_watched_folders()
         if folders:
             for i, f in enumerate(folders):
-                lbl = ctk.CTkLabel(
-                    self.folders_frame,
-                    text=f"  📁  {f['path']}",
-                    font=ctk.CTkFont(size=11), anchor="w",
-                )
-                lbl.grid(row=i, column=0, padx=10, pady=2, sticky="ew")
+                item = ctk.CTkFrame(self.folders_card, fg_color=COR_CARTAO_HOVER, corner_radius=6)
+                item.grid(row=i, column=0, sticky="ew", padx=5, pady=3)
+                item.grid_columnconfigure(0, weight=1)
+
+                ctk.CTkLabel(
+                    item, text=f"📁  {f['path']}",
+                    font=self.font_corpo, text_color=COR_TEXTO, anchor="w"
+                ).grid(row=0, column=0, sticky="ew", padx=10, pady=8)
         else:
             ctk.CTkLabel(
-                self.folders_frame,
-                text="Nenhuma pasta adicionada.",
-                font=ctk.CTkFont(size=11), text_color="#666",
-            ).grid(row=0, column=0, padx=10, pady=8)
+                self.folders_card, text=self.i18n.t("no_folders"),
+                font=self.font_corpo, text_color=COR_TEXTO_SEC
+            ).grid(row=0, column=0, padx=10, pady=15)
 
-        for w in self.rules_frame.winfo_children():
+        # Limpa regras
+        for w in self.rules_card.winfo_children():
             w.destroy()
-        rules = get_rules()
-        ctk.CTkLabel(
-            self.rules_frame,
-            text=f"{'Nome':20s} {'Destino':20s} {'Ativa':8s}",
-            font=ctk.CTkFont(size=11, weight="bold"), text_color="#aaa",
-        ).grid(row=0, column=0, sticky="w", padx=5, pady=2)
-        for i, r in enumerate(rules):
-            txt = f"{r['name']:15s} → {r['destination']:15s} {'✅' if r['active'] else '❌':8s}"
-            ctk.CTkLabel(
-                self.rules_frame, text=txt,
-                font=ctk.CTkFont(size=11),
-            ).grid(row=i+1, column=0, sticky="w", padx=10, pady=1)
 
-    # ─── DUPLICATES TAB ──────────────────────────────────────
+        rules = get_rules()
+        if rules:
+            for r in rules:
+                item = ctk.CTkFrame(self.rules_card, fg_color=COR_CARTAO_HOVER, corner_radius=6)
+                item.pack(fill="x", padx=5, pady=3)
+
+                status_color = COR_SECUNDARIA if r["active"] else COR_TEXTO_SEC
+                ctk.CTkLabel(
+                    item, text=f"{'✅' if r['active'] else '❌'}  {r['name']}",
+                    font=self.font_corpo, text_color=status_color
+                ).pack(side="left", padx=10, pady=8)
+
+                ctk.CTkLabel(
+                    item, text=f"→ {r['destination']}",
+                    font=self.font_pequeno, text_color=COR_TEXTO_SEC
+                ).pack(side="right", padx=10, pady=8)
+
+    # ─── DUPLICATES TAB ────────────────────────────────────────
 
     def _build_duplicates_tab(self):
         tab = self.tabview.tab(self.i18n.t("tab_duplicates"))
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(2, weight=1)
+
+        # Info card
+        info_frame = ctk.CTkFrame(tab, fg_color=COR_CARTAO, corner_radius=12)
+        info_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
 
         self.dup_info = ctk.CTkLabel(
-            tab, text=self.i18n.t("duplicates_space", size="0"),
-            font=ctk.CTkFont(size=14, weight="bold"),
+            info_frame, text=self.i18n.t("duplicates_space", size="0"),
+            font=ctk.CTkFont(size=16, weight="bold"), text_color=COR_TEXTO
         )
-        self.dup_info.grid(row=0, column=0, padx=10, pady=(10, 2), sticky="w")
+        self.dup_info.pack(pady=12, padx=15)
+
+        # Botão scan
+        scan_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        scan_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        scan_frame.grid_columnconfigure(0, weight=1)
 
         self.dup_scan_btn = ctk.CTkButton(
-            tab, text=self.i18n.t("btn_scan_now"),
+            scan_frame,
+            text=self.i18n.t("btn_scan_now"),
             command=self._scan_duplicates,
-            fg_color=COR_DESTAQUE, hover_color="#2a6b9c",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            width=180, height=36,
+            fg_color=COR_DESTAQUE, hover_color="#d97706",
+            font=self.font_botao, height=44, corner_radius=10
         )
-        self.dup_scan_btn.grid(row=1, column=0, padx=10, pady=2, sticky="w")
+        self.dup_scan_btn.grid(row=0, column=0, padx=5, sticky="ew")
 
-        self.dup_frame = ctk.CTkScrollableFrame(tab, fg_color=COR_FUNDO)
-        self.dup_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
-        self.dup_frame.grid_columnconfigure(0, weight=1)
+        # Lista de duplicatas
+        self.dup_list = ctk.CTkScrollableFrame(
+            tab, fg_color=COR_CARTAO, corner_radius=10
+        )
+        self.dup_list.grid(row=2, column=0, sticky="nsew", padx=10, pady=(5, 10))
+        self.dup_list.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(2, weight=1)
 
     def refresh_duplicates_tab(self):
         scan = db.get_last_scan()
         if scan and scan["total_duplicates"] > 0:
             self.dup_info.configure(
-                text=self.i18n.t("duplicates_space",
-                    size=round(scan["space_wasted_mb"], 1)))
+                text=self.i18n.t("duplicates_space", size=round(scan["space_wasted_mb"], 1)))
         else:
             self.dup_info.configure(text=self.i18n.t("duplicates_space", size="0"))
 
-        for w in self.dup_frame.winfo_children():
+        for w in self.dup_list.winfo_children():
             w.destroy()
 
         if not scan or scan["total_duplicates"] == 0:
             ctk.CTkLabel(
-                self.dup_frame, text="Clique em 'Escanear Agora' para começar",
-                font=ctk.CTkFont(size=12), text_color="#666",
-            ).grid(row=0, column=0, padx=20, pady=30)
+                self.dup_list, text=self.i18n.t("no_duplicates_found"),
+                font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_SECUNDARIA
+            ).pack(pady=40)
             return
 
         groups = group_duplicates(scan["id"])
         if not groups:
             ctk.CTkLabel(
-                self.dup_frame, text=self.i18n.t("no_duplicates_found"),
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color=COR_PRIMARIA,
-            ).grid(row=0, column=0, padx=20, pady=30)
+                self.dup_list, text=self.i18n.t("no_duplicates_found"),
+                font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_SECUNDARIA
+            ).pack(pady=40)
             return
 
-        for i, g in enumerate(groups):
-            wasted_mb = round(
-                (g["count"] - 1) * (g["total_bytes"] / g["count"]) / (1024*1024), 2)
-            card = ctk.CTkFrame(self.dup_frame, fg_color=COR_CARTAO, corner_radius=6)
-            card.grid(row=i, column=0, sticky="ew", padx=5, pady=2)
-            card.grid_columnconfigure(0, weight=1)
+        for g in groups:
+            wasted_mb = round((g["count"] - 1) * (g["total_bytes"] / g["count"]) / (1024*1024), 2)
+            card = ctk.CTkFrame(self.dup_list, fg_color=COR_CARTAO_HOVER, corner_radius=8)
+            card.pack(fill="x", padx=5, pady=4)
+
             ctk.CTkLabel(
                 card,
-                text=f"{g['filename']} ({g['count']} cópias) → {wasted_mb} MB",
-                font=ctk.CTkFont(size=11), anchor="w",
-            ).grid(row=0, column=0, padx=8, pady=4, sticky="w")
+                text=f"🔁 {g['filename']} ({g['count']} cópias) — {wasted_mb} MB",
+                font=self.font_corpo, text_color=COR_TEXTO, anchor="w"
+            ).pack(fill="x", padx=12, pady=10)
 
     # ─── AÇÕES ────────────────────────────────────────────────
 
     def _add_folder(self):
-        folder = filedialog.askdirectory(title="Selecione uma pasta para monitorar")
+        folder = filedialog.askdirectory(title=self.i18n.t("select_folder"))
         if folder:
             db.add_watched_folder(folder)
             self.refresh_organizer_tab()
             if self.watcher:
                 self.watcher.restart()
-            self._set_status(f"📁  Pasta adicionada: {folder}")
+            self._set_status(f"📁  {self.i18n.t('folder_added')}: {folder}")
 
     def _organize_all(self):
         if self._organizing:
             return
         self._organizing = True
-        self.btn_organize.configure(state="disabled", text="⏳  Organizando...")
+        self.btn_organize.configure(state="disabled", text="⏳  " + self.i18n.t("organizing"))
+        self.btn_organize_tab.configure(state="disabled", text="⏳  " + self.i18n.t("organizing"))
 
         def do_organize():
             total_moved = 0
@@ -486,6 +522,7 @@ class DiskyApp(ctk.CTk):
     def _organize_done(self, moved):
         self._organizing = False
         self.btn_organize.configure(state="normal", text=self.i18n.t("btn_organize_now"))
+        self.btn_organize_tab.configure(state="normal", text=self.i18n.t("btn_organize"))
         self._set_status(self.i18n.t("organize_done", moved=moved))
         self.refresh_dashboard()
         messagebox.showinfo("🧹 Disky", self.i18n.t("organize_done", moved=moved))
@@ -494,15 +531,15 @@ class DiskyApp(ctk.CTk):
         if self._scanning:
             return
         self._scanning = True
-        self.btn_scan.configure(state="disabled", text="⏳  Escaneando...")
-        self.dup_scan_btn.configure(state="disabled", text="⏳  Escaneando...")
+        self.btn_scan.configure(state="disabled", text="⏳  " + self.i18n.t("scanning"))
+        self.dup_scan_btn.configure(state="disabled", text="⏳  " + self.i18n.t("scanning"))
 
         folders = [f["path"] for f in db.get_watched_folders()]
         if not folders:
-            messagebox.showinfo("", "Adicione uma pasta primeiro!")
             self._scanning = False
             self.btn_scan.configure(state="normal", text=self.i18n.t("btn_scan_duplicates"))
             self.dup_scan_btn.configure(state="normal", text=self.i18n.t("btn_scan_now"))
+            messagebox.showinfo("", self.i18n.t("no_folder_selected"))
             return
 
         def do_scan():
@@ -522,60 +559,34 @@ class DiskyApp(ctk.CTk):
         self.dup_scan_btn.configure(state="normal", text=self.i18n.t("btn_scan_now"))
         self.refresh_duplicates_tab()
         self.refresh_dashboard()
-        self._set_status(f"✅  Scan concluído! {count} grupos encontrados.")
+        self._set_status(self.i18n.t("scan_done_status", count=count))
         messagebox.showinfo("🔍 Disky", self.i18n.t("scan_done", count=count))
 
     def _scan_error(self, msg):
         self._scanning = False
         self.btn_scan.configure(state="normal", text=self.i18n.t("btn_scan_duplicates"))
         self.dup_scan_btn.configure(state="normal", text=self.i18n.t("btn_scan_now"))
-        messagebox.showerror("Erro", f"Erro no scan:\n{msg}")
+        messagebox.showerror(self.i18n.t("error"), msg)
 
     def on_file_organized(self, filename, rule):
         """Callback do watcher."""
         self.refresh_dashboard()
         self._set_status(f"📥  {filename} → {rule}")
 
-    # ─── Instalação no Windows ─────────────────────────────────
+    # ─── Instalação ────────────────────────────────────────────
 
     def _install_windows(self):
-        """Instala como app normal do Windows: copia .exe, cria Desktop e Startup."""
         try:
             info = install_app(enable_startup=True)
             set_config("run_on_startup", "1")
             set_config("installed", "1")
-            self._set_status("✅  Disky instalado como app do Windows + segundo plano ativado")
+            self._set_status(self.i18n.t("installed_msg"))
             messagebox.showinfo(
-                "✅  Disky Instalado!",
-                "Agora sim: Disky foi instalado como app normal do Windows!\n\n"
-                f"📦  App instalado em:\n{info['exe']}\n\n"
-                f"📌  Atalho na Área de Trabalho:\n{info['desktop_shortcut']}\n\n"
-                f"🔄  Inicialização automática:\n{info['startup_shortcut']}\n\n"
-                "Ao ligar o PC, ele abre escondido e organiza seus Downloads em tempo real.\n"
-                "Criado por PITOCO113 🇧🇷"
+                self.i18n.t("installed_title"),
+                self.i18n.t("installed_body", exe=info['exe'], desktop=info.get('desktop_shortcut', ''))
             )
         except Exception as e:
-            messagebox.showerror(
-                "Erro na instalação",
-                "Não foi possível instalar o Disky.\n\n"
-                f"Detalhe: {e}\n\n"
-                "Se o antivírus bloquear PowerShell/atalho, me manda esse erro aqui."
-            )
-
-    def _toggle_startup(self):
-        """Ativa/desativa inicialização automática real na pasta Startup."""
-        try:
-            current = get_config("run_on_startup", "0") == "1" or is_startup_enabled()
-            new_value = not current
-            info = set_startup_enabled(new_value)
-            set_config("run_on_startup", "1" if new_value else "0")
-            if new_value:
-                self._set_status(f"🔄  Inicialização automática ATIVADA: {info.get('startup_shortcut', '')}")
-            else:
-                self._set_status("⏹️  Inicialização automática DESATIVADA")
-        except Exception as e:
-            self._set_status(f"⚠️  Erro startup: {str(e)[:60]}")
-            messagebox.showerror("Erro", f"Não consegui alterar inicialização automática:\n\n{e}")
+            messagebox.showerror(self.i18n.t("error"), f"{self.i18n.t('install_error')}\n\n{e}")
 
     # ─── Wizard ────────────────────────────────────────────────
 
@@ -590,12 +601,10 @@ class DiskyApp(ctk.CTk):
     # ─── Fechamento ────────────────────────────────────────────
 
     def _on_close(self):
-        """X da janela = esconder e continuar organizando em segundo plano."""
         self.withdraw()
-        self._set_status("🟢  Rodando em segundo plano")
+        self._set_status("🟢  " + self.i18n.t("running_bg"))
 
     def quit_app(self):
-        """Encerra de verdade."""
         if self.watcher:
             self.watcher.stop()
         self.destroy()

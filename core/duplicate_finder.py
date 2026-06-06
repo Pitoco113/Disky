@@ -12,18 +12,19 @@ from collections import defaultdict
 from . import db
 
 
-def hash_file(filepath: str, blocksize: int = 65536) -> str:
-    """Calcula SHA-256 de um arquivo."""
+def _hash_file_fast(filepath: str) -> tuple:
+    """Calcula hash de um arquivo. Retorna (filepath, hash) ou (filepath, None) se erro."""
     h = hashlib.sha256()
     try:
         with open(filepath, "rb") as f:
-            buf = f.read(blocksize)
-            while buf:
+            while True:
+                buf = f.read(65536)
+                if not buf:
+                    break
                 h.update(buf)
-                buf = f.read(blocksize)
-        return h.hexdigest()
+        return (filepath, h.hexdigest())
     except (PermissionError, FileNotFoundError, OSError):
-        return None
+        return (filepath, None)
 
 
 def scan_folder(folder_path: str, progress_callback=None) -> list:
@@ -31,9 +32,9 @@ def scan_folder(folder_path: str, progress_callback=None) -> list:
     Escaneia uma pasta em busca de duplicatas.
     Retorna lista de dicts: { file_hash, filename, filepath, size_bytes, modified_at }
 
-    Estratégia em 3 passos:
+    Estratégia otimizada em 3 passos:
     1. Agrupa só por tamanho (arquivos do mesmo tamanho são candidatos)
-    2. Calcula hash SHA-256 de todos os candidatos
+    2. Calcula hash SHA-256 EM PARALELO usando ThreadPoolExecutor
     3. Agrupa por hash pra achar duplicatas
     """
     if not os.path.isdir(folder_path):
@@ -56,21 +57,23 @@ def scan_folder(folder_path: str, progress_callback=None) -> list:
 
     # Passo 2: Só processa tamanhos que têm 2+ arquivos
     all_duplicates = []
-    total = len([v for v in by_size.values() if len(v) > 1])
-    processed = 0
-
+    candidates = []
     for size, filepaths in by_size.items():
-        if len(filepaths) < 2:
-            continue
+        if len(filepaths) >= 2:
+            candidates.extend(filepaths)
 
-        # Calcula hash de cada arquivo
-        hashes = defaultdict(list)
-        for fp in filepaths:
-            fhash = hash_file(fp)
-            if fhash:
-                hashes[fhash].append(fp)
+    # Hashing em PARALELO usando ThreadPoolExecutor
+    hashes = defaultdict(list)
+    total = len(candidates)
 
-        # Passo 3: Agrupa por hash — quem tem 2+ é duplicata
+    if candidates:
+        with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as executor:
+            results = executor.map(_hash_file_fast, candidates)
+            for filepath, fhash in results:
+                if fhash:
+                    hashes[fhash].append(filepath)
+
+        processed = 0
         for fhash, fps in hashes.items():
             if len(fps) < 2:
                 continue
@@ -79,13 +82,12 @@ def scan_folder(folder_path: str, progress_callback=None) -> list:
                     "file_hash": fhash,
                     "filename": os.path.basename(fp),
                     "filepath": fp,
-                    "size_bytes": size,
+                    "size_bytes": os.path.getsize(fp),
                     "modified_at": _get_mtime(fp),
                 })
-
-        processed += 1
-        if progress_callback:
-            progress_callback(processed, total)
+            processed += 1
+            if progress_callback:
+                progress_callback(processed, total)
 
     return all_duplicates
 
